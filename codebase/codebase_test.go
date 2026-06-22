@@ -44,10 +44,16 @@ func TestGenerate(t *testing.T) {
 		t.Error("Missing separator in codebase.md")
 	}
 
-	// Check FILE entries
-	for _, expected := range []string{"src/main.js", "src/utils.ts", "lib/helpers.py", "lib/cli.rs", "config.json", "README.md", "assets/icon.svg"} {
+	// Check FILE entries — only code files and package.json
+	for _, expected := range []string{"src/main.js", "src/utils.ts", "lib/helpers.py", "lib/cli.rs"} {
 		if !strings.Contains(content, "FILE: "+expected) {
 			t.Errorf("Missing FILE entry for %s", expected)
+		}
+	}
+	// Non-code text files (README.md, config.json, .gitignore) should NOT appear
+	for _, excluded := range []string{"README.md", "config.json", ".gitignore"} {
+		if strings.Contains(content, "FILE: "+excluded) {
+			t.Errorf("Non-code text file %s should be excluded", excluded)
 		}
 	}
 
@@ -105,14 +111,25 @@ func TestGenerateContainsNonCodeFiles(t *testing.T) {
 	data, _ := os.ReadFile(outputPath)
 	content := string(data)
 
-	// Ensure JSON file content is included (non-code text file)
-	if !strings.Contains(content, `"app": "WaterToGo"`) {
-		t.Error("JSON file content should be included in codebase.md")
+	// Non-code text files (README.md, config.json) should NOT be included
+	if strings.Contains(content, "Test Codebase") {
+		t.Error("README.md content should NOT be included in codebase.md")
+	}
+	if strings.Contains(content, `"app": "WaterToGo"`) {
+		t.Error("config.json content should NOT be included in codebase.md")
 	}
 
-	// Ensure markdown content is included
-	if !strings.Contains(content, "Test Codebase") {
-		t.Error("README.md content should be included in codebase.md")
+	// Binary/non-text files (icon.svg) should still appear as FILE entries
+	if !strings.Contains(content, "FILE: assets/icon.svg") {
+		t.Error("icon.svg should still have a FILE entry")
+	}
+	if !strings.Contains(content, "binary file") {
+		t.Error("icon.svg should be marked as binary")
+	}
+
+	// Code file content should still be included
+	if !strings.Contains(content, "function greet(name)") {
+		t.Error("JS file content should be included")
 	}
 }
 

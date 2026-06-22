@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -121,6 +123,8 @@ type model struct {
 
 	scanResult    *scanner.ScanResult
 	codebasePath  string
+	conv          *converter.Converter
+	codeFiles     []scanner.FileEntry
 
 	totalFiles    int
 	currentFile   int
@@ -220,6 +224,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateCopyDone(msg)
 	case convertFileMsg:
 		return m.updateConvertFile(msg)
+	case retryFileMsg:
+		return m.updateRetryFile(msg)
+	case retryTickMsg:
+		return m.updateRetryTick(msg)
 	case conversionDoneMsg:
 		m.done = true
 		m.screen = screenDone
@@ -348,7 +356,7 @@ func (m model) handleFolderInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 					m.folderErr = ""
 					m.screen = screenConverting
-					m.resetConversion()
+					m = m.resetConversion()
 					return m, m.startConversion(path)
 				}
 				// Navigate into directory
@@ -389,7 +397,7 @@ func (m model) handleFolderInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.folderErr = ""
 		m.screen = screenConverting
-		m.resetConversion()
+		m = m.resetConversion()
 		return m, m.startConversion(path)
 	}
 	var cmd tea.Cmd
@@ -437,6 +445,23 @@ type convertFileMsg struct {
 	nextCmd  tea.Cmd
 	err      error
 	skipped  bool
+}
+
+type retryFileMsg struct {
+	index      int
+	total      int
+	relPath    string
+	sourceData string
+	attempt    int
+	delay      time.Duration
+}
+
+type retryTickMsg struct {
+	index      int
+	total      int
+	relPath    string
+	sourceData string
+	attempt    int
 }
 
 // ----- start conversion -----
@@ -516,29 +541,47 @@ func (m model) updateCodebaseDone(msg codebaseDoneMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateCopyDone(msg copyDoneMsg) (tea.Model, tea.Cmd) {
 	if len(msg.codeFiles) == 0 {
-		tea.Println("No code files to convert")
-		return m, func() tea.Msg {
-			adjustProjectStructure(msg.outputRoot)
-			tea.Println(successStyle.Render("✓ Conversion Complete!"))
-			tea.Printf("Output: %s\n", msg.outputRoot)
-			return conversionDoneMsg{}
-		}
+		return m, m.conversionDoneCmd(msg.outputRoot)
 	}
-	tea.Printf("▸ Converting %d files to Go...\n\n", len(msg.codeFiles))
-	return m, m.convertFileCmd(msg.codeFiles, 0, msg.codebasePath, msg.outputRoot, msg.root)
+	m.conv = converter.New(m.cfg.APIKey, msg.codebasePath, msg.outputRoot, msg.root)
+	m.totalFiles = len(msg.codeFiles)
+	m.logs = append(m.logs, fmt.Sprintf("Converting %d files to Go...", len(msg.codeFiles)))
+	return m, m.convertFileCmd(msg.codeFiles, 0)
 }
 
-func (m model) convertFileCmd(files []scanner.FileEntry, index int, codebasePath, outputRoot, root string) tea.Cmd {
+func isQuotaError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "429") || strings.Contains(s, "RESOURCE_EXHAUSTED") || strings.Contains(s, "quota")
+}
+
+var retryDelayRe = regexp.MustCompile(`retryDelay[:\s]*(\d+(?:\.\d+)?)s`)
+
+func retryDelayFromError(err error) time.Duration {
+	if err == nil {
+		return 0
+	}
+	matches := retryDelayRe.FindStringSubmatch(err.Error())
+	if len(matches) >= 2 {
+		if secs, err := strconv.ParseFloat(matches[1], 64); err == nil {
+			return time.Duration(secs * float64(time.Second))
+		}
+	}
+	return 0
+}
+
+func (m model) convertFileCmd(files []scanner.FileEntry, index int) tea.Cmd {
 	return func() tea.Msg {
 		f := files[index]
-		conv := converter.New(m.cfg.APIKey, codebasePath, outputRoot, root)
 
-		if conv.IsConverted(f.RelPath) {
+		if m.conv.IsConverted(f.RelPath) {
 			var nextCmd tea.Cmd
 			if index+1 < len(files) {
-				nextCmd = m.convertFileCmd(files, index+1, codebasePath, outputRoot, root)
+				nextCmd = m.convertFileCmd(files, index+1)
 			} else {
-				nextCmd = m.conversionDoneCmd(outputRoot)
+				nextCmd = m.conversionDoneCmd(m.conv.OutputRoot)
 			}
 			return convertFileMsg{index: index, total: len(files), relPath: f.RelPath, nextCmd: nextCmd, skipped: true}
 		}
@@ -547,20 +590,35 @@ func (m model) convertFileCmd(files []scanner.FileEntry, index int, codebasePath
 		if err != nil {
 			var nextCmd tea.Cmd
 			if index+1 < len(files) {
-				nextCmd = m.convertFileCmd(files, index+1, codebasePath, outputRoot, root)
+				nextCmd = m.convertFileCmd(files, index+1)
 			} else {
-				nextCmd = m.conversionDoneCmd(outputRoot)
+				nextCmd = m.conversionDoneCmd(m.conv.OutputRoot)
 			}
 			return convertFileMsg{index: index, total: len(files), relPath: f.RelPath, nextCmd: nextCmd, err: err}
 		}
 
-		_, err = conv.Convert(f.RelPath, string(sourceData))
+		_, err = m.conv.Convert(f.RelPath, string(sourceData))
+
+		if isQuotaError(err) {
+			delay := retryDelayFromError(err)
+			if delay < time.Second {
+				delay = 30 * time.Second
+			}
+			return retryFileMsg{
+				index:      index,
+				total:      len(files),
+				relPath:    f.RelPath,
+				sourceData: string(sourceData),
+				attempt:    1,
+				delay:      delay,
+			}
+		}
 
 		var nextCmd tea.Cmd
 		if index+1 < len(files) {
-			nextCmd = m.convertFileCmd(files, index+1, codebasePath, outputRoot, root)
+			nextCmd = m.convertFileCmd(files, index+1)
 		} else {
-			nextCmd = m.conversionDoneCmd(outputRoot)
+			nextCmd = m.conversionDoneCmd(m.conv.OutputRoot)
 		}
 		return convertFileMsg{index: index, total: len(files), relPath: f.RelPath, nextCmd: nextCmd, err: err}
 	}
@@ -573,13 +631,14 @@ func (m model) conversionDoneCmd(outputRoot string) tea.Cmd {
 	}
 }
 
-func (m model) resetConversion() {
+func (m model) resetConversion() model {
 	m.convertErrors = []string{}
 	m.convertedCount = 0
 	m.failedCount = 0
 	m.currentFile = 0
 	m.totalFiles = 0
 	m.logs = []string{}
+	return m
 }
 
 func (m model) updateConvertFile(msg convertFileMsg) (tea.Model, tea.Cmd) {
@@ -595,6 +654,66 @@ func (m model) updateConvertFile(msg convertFileMsg) (tea.Model, tea.Cmd) {
 		m.logs = append(m.logs, fmt.Sprintf("✓ %s", msg.relPath))
 	}
 	return m, msg.nextCmd
+}
+
+func (m model) updateRetryFile(msg retryFileMsg) (tea.Model, tea.Cmd) {
+	m.currentFile = msg.index + 1
+	m.totalFiles = msg.total
+	m.currentName = msg.relPath
+	m.logs = append(m.logs, fmt.Sprintf("⏳ %s: rate limited, retrying in %ds (attempt %d)", msg.relPath, int(msg.delay.Seconds()), msg.attempt))
+	return m, tea.Tick(msg.delay, func(t time.Time) tea.Msg {
+		return retryTickMsg{
+			index:      msg.index,
+			total:      msg.total,
+			relPath:    msg.relPath,
+			sourceData: msg.sourceData,
+			attempt:    msg.attempt,
+		}
+	})
+}
+
+func (m model) updateRetryTick(msg retryTickMsg) (tea.Model, tea.Cmd) {
+	m.logs = append(m.logs, fmt.Sprintf("⟳ %s: retrying...", msg.relPath))
+
+	const maxAttempts = 5
+	if msg.attempt >= maxAttempts {
+		m.failedCount++
+		m.convertErrors = append(m.convertErrors, fmt.Sprintf("%s: exceeded %d retries", msg.relPath, maxAttempts))
+		m.logs = append(m.logs, fmt.Sprintf("✗ %s: max retries exceeded", msg.relPath))
+		if msg.index+1 < m.totalFiles {
+			return m, m.convertFileCmd(nil, msg.index+1)
+		}
+		return m, m.conversionDoneCmd(m.conv.OutputRoot)
+	}
+
+	_, err := m.conv.Convert(msg.relPath, msg.sourceData)
+	if isQuotaError(err) {
+		delay := retryDelayFromError(err)
+		if delay < time.Second {
+			delay = 30 * time.Second
+		}
+		return m, tea.Tick(delay, func(t time.Time) tea.Msg {
+			return retryTickMsg{
+				index:      msg.index,
+				total:      msg.total,
+				relPath:    msg.relPath,
+				sourceData: msg.sourceData,
+				attempt:    msg.attempt + 1,
+			}
+		})
+	}
+	if err != nil {
+		m.failedCount++
+		m.convertErrors = append(m.convertErrors, fmt.Sprintf("%s: %v", msg.relPath, err))
+		m.logs = append(m.logs, fmt.Sprintf("✗ %s: %v", msg.relPath, err))
+	} else {
+		m.convertedCount++
+		m.logs = append(m.logs, fmt.Sprintf("✓ %s", msg.relPath))
+	}
+	if msg.index+1 < msg.total {
+		return m, m.convertFileCmd(nil, msg.index+1)
+	}
+	return m, m.conversionDoneCmd(m.conv.OutputRoot)
 }
 
 func countFiles(r *scanner.ScanResult) int {

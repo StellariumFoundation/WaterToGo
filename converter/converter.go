@@ -146,13 +146,14 @@ Original language: %s
 
 func cleanGoCode(text string) string {
 	text = strings.TrimSpace(text)
-	if strings.HasPrefix(text, "```go") {
-		text = strings.TrimPrefix(text, "```go")
+	start := strings.Index(text, "```go")
+	if start >= 0 {
+		text = text[start+5:]
 		if idx := strings.LastIndex(text, "```"); idx >= 0 {
 			text = text[:idx]
 		}
-	} else if strings.HasPrefix(text, "```") {
-		text = strings.TrimPrefix(text, "```")
+	} else if start = strings.Index(text, "```"); start >= 0 {
+		text = text[start+3:]
 		if idx := strings.LastIndex(text, "```"); idx >= 0 {
 			text = text[:idx]
 		}

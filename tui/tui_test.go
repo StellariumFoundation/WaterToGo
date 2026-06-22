@@ -39,15 +39,21 @@ func TestInitialModel_cfgWithKey(t *testing.T) {
 	}
 }
 
+func isQuitCmd(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	msg := cmd()
+	_, ok := msg.(tea.QuitMsg)
+	return ok
+}
+
 func TestCtrlC_alwaysQuits(t *testing.T) {
 	m := InitialModel()
 	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
-	result, cmd := m.Update(msg)
-	if cmd != tea.Quit {
+	_, cmd := m.Update(msg)
+	if !isQuitCmd(cmd) {
 		t.Error("Ctrl+C should always quit")
-	}
-	if _, ok := result.(model); !ok {
-		t.Error("result should be a model")
 	}
 }
 
@@ -56,7 +62,7 @@ func TestQ_onAPIKeyScreen_doesNotQuit(t *testing.T) {
 	m.screen = screenAPIKey
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
 	_, cmd := m.Update(msg)
-	if cmd == tea.Quit {
+	if isQuitCmd(cmd) {
 		t.Error("q should not quit on API key screen")
 	}
 }
@@ -66,7 +72,7 @@ func TestQ_onFolderSelectScreen_doesNotQuit(t *testing.T) {
 	m.screen = screenFolderSelect
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
 	_, cmd := m.Update(msg)
-	if cmd == tea.Quit {
+	if isQuitCmd(cmd) {
 		t.Error("q should not quit on folder select screen")
 	}
 }
@@ -76,7 +82,7 @@ func TestQ_onConvertingScreen_quits(t *testing.T) {
 	m.screen = screenConverting
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
 	_, cmd := m.Update(msg)
-	if cmd != tea.Quit {
+	if !isQuitCmd(cmd) {
 		t.Error("q should quit on converting screen")
 	}
 }
@@ -125,7 +131,7 @@ func TestEnterOnDoneScreen_quits(t *testing.T) {
 	m.screen = screenDone
 	msg := tea.KeyMsg{Type: tea.KeyEnter}
 	_, cmd := m.Update(msg)
-	if cmd != tea.Quit {
+	if !isQuitCmd(cmd) {
 		t.Error("Enter on done screen should quit")
 	}
 }
@@ -166,7 +172,7 @@ func TestResetConversion(t *testing.T) {
 	m.totalFiles = 20
 	m.logs = []string{"log1", "log2"}
 
-	m.resetConversion()
+	m = m.resetConversion()
 
 	if len(m.convertErrors) != 0 {
 		t.Error("convertErrors should be empty after reset")
@@ -433,8 +439,11 @@ func TestAPIKeyView_withSavedKey(t *testing.T) {
 	m.width = 80
 	m.height = 24
 	view := m.apiKeyView()
-	if !contains(view, "saved") {
-		t.Error("view should mention saved key")
+	if !contains(view, "Saved") {
+		t.Error("view should mention 'Saved'")
+	}
+	if !contains(view, "detected") {
+		t.Error("view should mention 'detected'")
 	}
 }
 
@@ -476,7 +485,7 @@ func TestView_dispatchesCorrectScreen(t *testing.T) {
 		{"API key", screenAPIKey, "WaterToGo"},
 		{"Folder select", screenFolderSelect, "Select"},
 		{"Converting", screenConverting, "Converting"},
-		{"Done", screenDone, "Complete"},
+		{"Done", screenDone, "WATER"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

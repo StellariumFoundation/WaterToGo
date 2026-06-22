@@ -76,6 +76,10 @@ func sortChildren(te *treeEntry) {
 
 func writeEntries(f *os.File, entries []*treeEntry, prefix string) {
 	for _, te := range entries {
+		if !te.entry.IsDir && !te.entry.IsBinary && !te.entry.IsCode && !isPackageJSON(te.entry.RelPath) {
+			continue
+		}
+
 		fmt.Fprintln(f, separator)
 
 		if te.entry.IsDir {
@@ -100,4 +104,8 @@ func writeEntries(f *os.File, entries []*treeEntry, prefix string) {
 			}
 		}
 	}
+}
+
+func isPackageJSON(path string) bool {
+	return strings.ToLower(filepath.Base(path)) == "package.json"
 }
