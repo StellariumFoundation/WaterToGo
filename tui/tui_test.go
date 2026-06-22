@@ -21,8 +21,8 @@ func TestInitialModel_defaults(t *testing.T) {
 	if m.folderInput.Value() != "" {
 		t.Errorf("folderInput should be empty, got %q", m.folderInput.Value())
 	}
-	if m.progress == nil {
-		t.Error("progress should not be nil")
+	if m.progress.Width == 0 {
+		t.Error("progress should have Width set")
 	}
 	if m.exePath == "" {
 		t.Error("exePath should not be empty")
