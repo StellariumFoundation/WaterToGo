@@ -7,7 +7,7 @@ import (
 )
 
 type Config struct {
-	APIKey string `json:"api_key"`
+	APIKeys []string `json:"api_keys,omitempty"`
 }
 
 const configFileName = "watertogo_config.json"
@@ -32,11 +32,30 @@ func Load() (*Config, error) {
 		}
 		return nil, err
 	}
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, err
 	}
-	return &cfg, nil
+
+	keys, _ := raw["api_keys"].([]any)
+	var apiKeys []string
+	for _, k := range keys {
+		if s, ok := k.(string); ok && s != "" {
+			apiKeys = append(apiKeys, s)
+		}
+	}
+
+	if len(apiKeys) == 0 {
+		if oldKey, ok := raw["api_key"].(string); ok && oldKey != "" {
+			apiKeys = []string{oldKey}
+			cfg := &Config{APIKeys: apiKeys}
+			cfg.Save()
+			return cfg, nil
+		}
+	}
+
+	return &Config{APIKeys: apiKeys}, nil
 }
 
 func (c *Config) Save() error {
@@ -51,6 +70,6 @@ func (c *Config) Save() error {
 	return os.WriteFile(path, data, 0644)
 }
 
-func (c *Config) HasKey() bool {
-	return c.APIKey != ""
+func (c *Config) HasKeys() bool {
+	return len(c.APIKeys) > 0
 }

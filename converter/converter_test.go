@@ -1,6 +1,7 @@
 package converter
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +55,7 @@ func TestCleanGoCode_explanationBeforeFence(t *testing.T) {
 
 func TestGoPath(t *testing.T) {
 	tmp := t.TempDir()
-	c := New("fake-key", "", tmp, "")
+	c := New([]string{"fake-key"}, tmp, "", "")
 	tests := []struct {
 		relPath string
 		want    string
@@ -78,7 +79,7 @@ func TestGoPath(t *testing.T) {
 
 func TestIsConverted_missing(t *testing.T) {
 	tmp := t.TempDir()
-	c := New("fake-key", "", tmp, "")
+	c := New([]string{"fake-key"}, tmp, "", "")
 	if c.IsConverted("nonexistent.py") {
 		t.Error("IsConverted should be false for missing file")
 	}
@@ -88,7 +89,7 @@ func TestIsConverted_present(t *testing.T) {
 	tmp := t.TempDir()
 	outPath := filepath.Join(tmp, "test.go")
 	os.WriteFile(outPath, []byte("package main"), 0644)
-	c := New("fake-key", "", tmp, "")
+	c := New([]string{"fake-key"}, tmp, "", "")
 	if !c.IsConverted("test.py") {
 		t.Error("IsConverted should be true for existing .go file")
 	}
@@ -127,12 +128,9 @@ func TestCopyNonCodeFile_sourceMissing(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	c := New("key123", "codebase.md", "/out", "/src")
-	if c.APIKey != "key123" {
-		t.Errorf("APIKey = %q, want %q", c.APIKey, "key123")
-	}
-	if c.CodebasePath != "codebase.md" {
-		t.Errorf("CodebasePath = %q", c.CodebasePath)
+	c := New([]string{"key123"}, "/out", "/src", "test-model")
+	if len(c.APIKeys) != 1 || c.APIKeys[0] != "key123" {
+		t.Errorf("APIKeys = %v, want [key123]", c.APIKeys)
 	}
 	if c.OutputRoot != "/out" {
 		t.Errorf("OutputRoot = %q", c.OutputRoot)
@@ -140,16 +138,148 @@ func TestNew(t *testing.T) {
 	if c.SourceRoot != "/src" {
 		t.Errorf("SourceRoot = %q", c.SourceRoot)
 	}
+	if c.ModelName != "test-model" {
+		t.Errorf("ModelName = %q, want %q", c.ModelName, "test-model")
+	}
 	if c.ctx == nil {
 		t.Error("ctx should not be nil")
 	}
 }
 
-func TestModelName(t *testing.T) {
-	if modelName == "" {
-		t.Error("modelName should not be empty")
+func TestNew_emptyModel_usesDefault(t *testing.T) {
+	c := New([]string{"key123"}, "/out", "/src", "")
+	if c.ModelName != DefaultModelName {
+		t.Errorf("ModelName = %q, want %q", c.ModelName, DefaultModelName)
 	}
-	if !strings.Contains(modelName, "gemini") {
-		t.Errorf("modelName should contain 'gemini', got %q", modelName)
+}
+
+func TestNew_emptyKeys_defaults(t *testing.T) {
+	c := New(nil, "/out", "/src", "")
+	if len(c.APIKeys) != 1 || c.APIKeys[0] != "" {
+		t.Errorf("APIKeys = %v, want [\"\"]", c.APIKeys)
+	}
+}
+
+func TestKeyRotation(t *testing.T) {
+	c := New([]string{"key1", "key2", "key3"}, "/out", "/src", "")
+	if c.CurrentKey() != "key1" {
+		t.Errorf("CurrentKey = %q, want key1", c.CurrentKey())
+	}
+	if c.ExhaustedKeys() {
+		t.Error("should not be exhausted yet")
+	}
+
+	c.advanceKey()
+	if c.CurrentKey() != "key2" {
+		t.Errorf("CurrentKey = %q, want key2", c.CurrentKey())
+	}
+
+	c.advanceKey()
+	if c.CurrentKey() != "key3" {
+		t.Errorf("CurrentKey = %q, want key3", c.CurrentKey())
+	}
+
+	c.advanceKey()
+	if !c.ExhaustedKeys() {
+		t.Error("should be exhausted")
+	}
+	if c.CurrentKey() != "" {
+		t.Errorf("CurrentKey = %q, want empty", c.CurrentKey())
+	}
+
+	c.ResetKeys()
+	if c.CurrentKey() != "key1" {
+		t.Errorf("after ResetKeys, CurrentKey = %q, want key1", c.CurrentKey())
+	}
+}
+
+func TestIsKeyError(t *testing.T) {
+	tests := []struct {
+		err  string
+		want bool
+	}{
+		{"API_KEY_INVALID", true},
+		{"API key expired", true},
+		{"API key not found", true},
+		{"RESOURCE_EXHAUSTED", true},
+		{"quota exceeded", true},
+		{"429 Too Many Requests", true},
+		{"PERMISSION_DENIED", true},
+		{"TLS handshake timeout", true},
+		{"read tcp 192.168.0.5:53463->216.239.34.223:443: wsarecv", true},
+		{"write tcp: connection refused", true},
+		{"no such host", true},
+		{"i/o timeout", true},
+		{"deadline exceeded", true},
+		{"network error", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		got := isRetryableError(fmt.Errorf("%s", tt.err))
+		if got != tt.want {
+			t.Errorf("isRetryableError(%q) = %v, want %v", tt.err, got, tt.want)
+		}
+	}
+	got := isRetryableError(nil)
+	if got != false {
+		t.Error("isRetryableError(nil) should be false")
+	}
+}
+
+func TestDefaultModelName(t *testing.T) {
+	if DefaultModelName == "" {
+		t.Error("DefaultModelName should not be empty")
+	}
+	if !strings.Contains(DefaultModelName, "gemini") {
+		t.Errorf("DefaultModelName should contain 'gemini', got %q", DefaultModelName)
+	}
+}
+
+func TestSplitSource_smallFile(t *testing.T) {
+	c := New([]string{"key"}, "", "", "")
+	src := "line1\nline2\nline3"
+	chunks := c.splitSource(src)
+	if len(chunks) != 1 {
+		t.Errorf("expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0] != src {
+		t.Errorf("chunk = %q, want %q", chunks[0], src)
+	}
+}
+
+func TestSplitSource_largeFile(t *testing.T) {
+	c := New([]string{"key"}, "", "", "")
+	c.outputTokenLimit = 100
+	var lines []string
+	for i := 0; i < 1000; i++ {
+		lines = append(lines, fmt.Sprintf("this is a long line of source code number %d that should take many tokens to represent", i))
+	}
+	src := strings.Join(lines, "\n")
+	chunks := c.splitSource(src)
+	if len(chunks) < 2 {
+		t.Errorf("expected multiple chunks for large file, got %d", len(chunks))
+	}
+	var joined strings.Builder
+	for i, ch := range chunks {
+		if ch == "" {
+			t.Errorf("chunk %d is empty", i)
+		}
+		if i > 0 {
+			joined.WriteString("\n")
+		}
+		joined.WriteString(ch)
+	}
+	if joined.String() != src {
+		t.Error("rejoined chunks don't match original source")
+	}
+}
+
+func TestSplitSource_zeroLimit(t *testing.T) {
+	c := New([]string{"key"}, "", "", "")
+	c.outputTokenLimit = 0
+	src := "line1\nline2\nline3"
+	chunks := c.splitSource(src)
+	if len(chunks) != 1 {
+		t.Errorf("expected 1 chunk with zero limit, got %d", len(chunks))
 	}
 }
