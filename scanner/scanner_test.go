@@ -108,11 +108,11 @@ func TestIsCodeFile(t *testing.T) {
 		want bool
 	}{
 		{"file.js", true},
-		{"file.jsx", true},
 		{"file.ts", true},
-		{"file.tsx", true},
 		{"file.py", true},
 		{"file.rs", true},
+		{"file.jsx", false},
+		{"file.tsx", false},
 		{"file.go", false},
 		{"file.json", false},
 		{"file.md", false},

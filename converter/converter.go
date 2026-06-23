@@ -12,7 +12,22 @@ import (
 	"google.golang.org/genai/tokenizer"
 )
 
-const DefaultModelName = "gemini-3-flash-preview"
+const DefaultModelName = "gemini-pro-latest"
+
+var DefaultModels = []string{
+	"gemini-pro-latest",
+	"gemini-3.1-pro-preview",
+	"gemini-flash-latest",
+	"gemini-3.5-flash",
+	"gemini-3-pro-preview",
+	"gemini-3-flash-preview",
+	"gemini-flash-lite-latest",
+	"gemini-3.1-flash-lite",
+	"gemini-3.1-flash-lite-preview",
+	"gemma-4-31b-it",
+	"gemini-2.5-pro",
+	"gemini-2.5-flash",
+}
 
 type Converter struct {
 	APIKeys          []string
@@ -20,6 +35,8 @@ type Converter struct {
 	OutputRoot       string
 	SourceRoot       string
 	ModelName        string
+	Models           []string
+	modelIndex       int
 	outputTokenLimit int32
 	chat             *genai.Chat
 	ctx              context.Context
@@ -34,11 +51,21 @@ func New(apiKeys []string, outputRoot, sourceRoot, modelName string) *Converter 
 	if len(apiKeys) == 0 {
 		apiKeys = []string{""}
 	}
+	models := DefaultModels
+	startIdx := 0
+	for i, m := range models {
+		if m == modelName {
+			startIdx = i
+			break
+		}
+	}
 	return &Converter{
 		APIKeys:    apiKeys,
 		OutputRoot: outputRoot,
 		SourceRoot: sourceRoot,
 		ModelName:  modelName,
+		Models:     models,
+		modelIndex: startIdx,
 		ctx:        context.Background(),
 	}
 }
@@ -48,6 +75,10 @@ func (c *Converter) CurrentKey() string {
 		return c.APIKeys[c.keyIndex]
 	}
 	return ""
+}
+
+func (c *Converter) CurrentModel() string {
+	return c.ModelName
 }
 
 func (c *Converter) ExhaustedKeys() bool {
@@ -66,6 +97,9 @@ func (c *Converter) initChat() error {
 	}
 
 	key := c.CurrentKey()
+	if key == "" {
+		return fmt.Errorf("api key is empty — all keys may be exhausted or none were configured")
+	}
 	client, err := genai.NewClient(c.ctx, &genai.ClientConfig{
 		APIKey:  key,
 		Backend: genai.BackendGeminiAPI,
@@ -75,7 +109,10 @@ func (c *Converter) initChat() error {
 	}
 	c.client = client
 
+	savedStderr := os.Stderr
+	os.Stderr = nil
 	tok, err := tokenizer.NewLocalTokenizer(c.ModelName)
+	os.Stderr = savedStderr
 	if err == nil {
 		c.tokenizer = tok
 	}
@@ -88,7 +125,7 @@ func (c *Converter) initChat() error {
 	if err == nil && modelInfo.OutputTokenLimit > 0 {
 		c.outputTokenLimit = modelInfo.OutputTokenLimit
 	} else {
-		c.outputTokenLimit = 65536
+		c.outputTokenLimit = 0
 	}
 
 	temp := float32(1.0)
@@ -123,28 +160,6 @@ func (c *Converter) goPath(relPath string) string {
 	return filepath.Join(c.OutputRoot, goName)
 }
 
-func isRetryableError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "API_KEY_INVALID") ||
-		strings.Contains(s, "API key expired") ||
-		strings.Contains(s, "API key not found") ||
-		strings.Contains(s, "RESOURCE_EXHAUSTED") ||
-		strings.Contains(s, "quota") ||
-		strings.Contains(s, "429") ||
-		strings.Contains(s, "PERMISSION_DENIED") ||
-		strings.Contains(s, "TLS handshake timeout") ||
-		strings.Contains(s, "read tcp") ||
-		strings.Contains(s, "write tcp") ||
-		strings.Contains(s, "connection refused") ||
-		strings.Contains(s, "connection reset") ||
-		strings.Contains(s, "no such host") ||
-		strings.Contains(s, "i/o timeout") ||
-		strings.Contains(s, "deadline exceeded")
-}
-
 func (c *Converter) advanceKey() string {
 	c.chat = nil
 	c.client = nil
@@ -156,9 +171,7 @@ func (c *Converter) Convert(relPath, sourceCode string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(relPath))
 	langName := map[string]string{
 		".js":  "JavaScript",
-		".jsx": "JavaScript (JSX)",
 		".ts":  "TypeScript",
-		".tsx": "TypeScript (TSX)",
 		".py":  "Python",
 		".rs":  "Rust",
 	}[ext]
@@ -166,26 +179,42 @@ func (c *Converter) Convert(relPath, sourceCode string) (string, error) {
 		langName = "source"
 	}
 
-	for attempts := 0; attempts < len(c.APIKeys)+1; attempts++ {
-		if err := c.initChat(); err != nil {
-			if isRetryableError(err) {
+	for c.modelIndex < len(c.Models) {
+		c.ModelName = c.Models[c.modelIndex]
+		c.ResetKeys()
+
+	keyLoop:
+		for attempts := 0; attempts < len(c.APIKeys)+1; attempts++ {
+			if err := c.initChat(); err != nil {
 				if c.advanceKey() != "" {
 					continue
 				}
-				return "", fmt.Errorf("all API keys exhausted: %w", err)
+				break // all keys exhausted, try next model
 			}
-			return "", err
-		}
 
-		chunks := c.splitSource(sourceCode)
-		var fullGoCode strings.Builder
+			chunks := c.splitSource(sourceCode)
+			var fullGoCode strings.Builder
 
-		success := true
-		for i, chunk := range chunks {
-			var prompt string
-			switch {
-			case len(chunks) == 1:
-				prompt = fmt.Sprintf(`Make a complete rewrite of this file in Golang in full and complete. Do not lose any code and keep the code as a Go class. Write idiomatic Go code.
+			if len(chunks) > 1 {
+				ctxPrompt := fmt.Sprintf(`Here is the complete %s source file "%s" for context. I will ask you to convert it to Go part by part. Do not output anything yet.
+
+--- Complete source file ---
+
+%s`, langName, relPath, sourceCode)
+				_, err := c.chat.SendMessage(c.ctx, genai.Part{Text: ctxPrompt})
+				if err != nil {
+					if c.advanceKey() != "" {
+						continue keyLoop
+					}
+					break keyLoop
+				}
+			}
+
+			for i, chunk := range chunks {
+				var prompt string
+				switch {
+				case len(chunks) == 1:
+					prompt = fmt.Sprintf(`Make a complete rewrite of this file in Golang in full and complete. Do not lose any code and keep the code as a Go class. Write idiomatic Go code.
 
 Source file: %s
 Original language: %s
@@ -193,49 +222,46 @@ Original language: %s
 --- Source code to convert ---
 
 %s`, relPath, langName, sourceCode)
-			case i == 0:
-				prompt = fmt.Sprintf(`Convert this first part of a %s file to Go. This is part %d of %d.
+				case i == 0:
+					prompt = fmt.Sprintf(`Convert this first part of a %s file to Go. This is part %d of %d.
 
 Source file: %s
 
+The entire file was provided above for context.
 Return only the Go code for this part. More parts will follow.
 
 --- Part %d ---
 
 %s`, langName, i+1, len(chunks), relPath, i+1, chunk)
-			default:
-				prompt = fmt.Sprintf(`Convert the next part of a %s file to Go. This is part %d of %d.
+				default:
+					prompt = fmt.Sprintf(`Convert the next part of a %s file to Go. This is part %d of %d.
 
 Source file: %s
 
-The chat history above contains the previous parts and their Go conversions.
+The entire file was provided above for context.
+The chat history contains earlier parts and their Go conversions.
 Convert only this part. Return only its Go code. Do NOT repeat code from earlier parts.
 
 --- Part %d ---
 
 %s`, langName, i+1, len(chunks), relPath, i+1, chunk)
-			}
-
-			resp, err := c.chat.SendMessage(c.ctx, genai.Part{Text: prompt})
-			if err != nil {
-				if isRetryableError(err) {
-					success = false
-					if c.advanceKey() != "" {
-						// Retry entire file from scratch with new key
-						break
-					}
-					return "", fmt.Errorf("all API keys exhausted: %w", err)
 				}
-				return "", fmt.Errorf("sending message: %w", err)
+
+				resp, err := c.chat.SendMessage(c.ctx, genai.Part{Text: prompt})
+				if err != nil {
+					if c.advanceKey() != "" {
+						continue keyLoop
+					}
+					break keyLoop
+				}
+
+				fullGoCode.WriteString(cleanGoCode(resp.Text()))
+				if i < len(chunks)-1 {
+					fullGoCode.WriteString("\n")
+				}
 			}
 
-			fullGoCode.WriteString(cleanGoCode(resp.Text()))
-			if i < len(chunks)-1 {
-				fullGoCode.WriteString("\n")
-			}
-		}
-
-		if success {
+			// All chunks succeeded
 			outPath := c.goPath(relPath)
 			outDir := filepath.Dir(outPath)
 			if err := os.MkdirAll(outDir, 0755); err != nil {
@@ -246,9 +272,11 @@ Convert only this part. Return only its Go code. Do NOT repeat code from earlier
 			}
 			return outPath, nil
 		}
+
+		c.modelIndex++
 	}
 
-	return "", fmt.Errorf("all API keys failed")
+	return "", fmt.Errorf("all API keys and models exhausted")
 }
 
 func (c *Converter) splitSource(sourceCode string) []string {

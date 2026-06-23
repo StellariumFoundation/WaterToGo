@@ -9,8 +9,7 @@ import (
 )
 
 var codeExts = map[string]bool{
-	".js": true, ".jsx": true, ".ts": true, ".tsx": true,
-	".py": true, ".rs": true,
+	".js": true, ".ts": true, ".py": true, ".rs": true,
 }
 
 var alwaysSkip = map[string]bool{

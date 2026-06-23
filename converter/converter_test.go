@@ -193,39 +193,6 @@ func TestKeyRotation(t *testing.T) {
 	}
 }
 
-func TestIsKeyError(t *testing.T) {
-	tests := []struct {
-		err  string
-		want bool
-	}{
-		{"API_KEY_INVALID", true},
-		{"API key expired", true},
-		{"API key not found", true},
-		{"RESOURCE_EXHAUSTED", true},
-		{"quota exceeded", true},
-		{"429 Too Many Requests", true},
-		{"PERMISSION_DENIED", true},
-		{"TLS handshake timeout", true},
-		{"read tcp 192.168.0.5:53463->216.239.34.223:443: wsarecv", true},
-		{"write tcp: connection refused", true},
-		{"no such host", true},
-		{"i/o timeout", true},
-		{"deadline exceeded", true},
-		{"network error", false},
-		{"", false},
-	}
-	for _, tt := range tests {
-		got := isRetryableError(fmt.Errorf("%s", tt.err))
-		if got != tt.want {
-			t.Errorf("isRetryableError(%q) = %v, want %v", tt.err, got, tt.want)
-		}
-	}
-	got := isRetryableError(nil)
-	if got != false {
-		t.Error("isRetryableError(nil) should be false")
-	}
-}
-
 func TestDefaultModelName(t *testing.T) {
 	if DefaultModelName == "" {
 		t.Error("DefaultModelName should not be empty")

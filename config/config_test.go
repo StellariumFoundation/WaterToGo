@@ -11,7 +11,7 @@ func TestSaveAndLoad(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpPath := filepath.Join(tmpDir, "test_config.json")
 
-	cfg := &Config{APIKey: "test-key-12345"}
+	cfg := &Config{APIKeys: []string{"test-key-12345"}}
 
 	data, _ := json.MarshalIndent(cfg, "", "  ")
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
@@ -27,19 +27,19 @@ func TestSaveAndLoad(t *testing.T) {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
 
-	if loaded.APIKey != "test-key-12345" {
-		t.Errorf("APIKey = %q, want %q", loaded.APIKey, "test-key-12345")
+	if len(loaded.APIKeys) != 1 || loaded.APIKeys[0] != "test-key-12345" {
+		t.Errorf("APIKeys = %q, want %q", loaded.APIKeys, []string{"test-key-12345"})
 	}
 
-	if !loaded.HasKey() {
-		t.Error("HasKey should be true")
+	if !loaded.HasKeys() {
+		t.Error("HasKeys should be true")
 	}
 }
 
-func TestHasKeyEmpty(t *testing.T) {
+func TestHasKeysEmpty(t *testing.T) {
 	cfg := &Config{}
-	if cfg.HasKey() {
-		t.Error("HasKey should be false for empty config")
+	if cfg.HasKeys() {
+		t.Error("HasKeys should be false for empty config")
 	}
 }
 
@@ -51,7 +51,7 @@ func TestLoadNonExistent(t *testing.T) {
 	if cfg == nil {
 		cfg = &Config{}
 	}
-	if cfg.HasKey() {
+	if cfg.HasKeys() {
 		t.Log("Existing config found on this system")
 	} else {
 		t.Log("No existing config (expected in clean environment)")

@@ -87,28 +87,14 @@ func TestQ_onConvertingScreen_quits(t *testing.T) {
 	}
 }
 
-func TestEsc_fromFolderSelect_toModelSelect(t *testing.T) {
+func TestEsc_fromFolderSelect_toAPIKey(t *testing.T) {
 	m := InitialModel()
 	m.screen = screenFolderSelect
 	msg := tea.KeyMsg{Type: tea.KeyEsc}
 	result, _ := m.Update(msg)
 	m2 := result.(model)
-	if m2.screen != screenModelSelect {
-		t.Errorf("esc should go to model select screen, got %d", m2.screen)
-	}
-}
-
-func TestEsc_fromModelSelect_toAPIKey(t *testing.T) {
-	m := InitialModel()
-	m.screen = screenModelSelect
-	msg := tea.KeyMsg{Type: tea.KeyEsc}
-	result, _ := m.Update(msg)
-	m2 := result.(model)
 	if m2.screen != screenAPIKey {
 		t.Errorf("esc should go to API key screen, got %d", m2.screen)
-	}
-	if !m2.apiInput.Focused() {
-		t.Error("apiInput should be focused after esc")
 	}
 }
 
@@ -399,73 +385,6 @@ func TestDoneView_empty(t *testing.T) {
 	}
 }
 
-func TestModelSelectView_renders(t *testing.T) {
-	m := InitialModel()
-	m.screen = screenModelSelect
-	m.width = 80
-	m.height = 24
-	m.models = []string{"gemini-3-flash-preview", "gemini-2.5-flash"}
-	view := m.modelSelectView()
-	if view == "" {
-		t.Error("modelSelectView should not be empty")
-	}
-	if !contains(view, "gemini-3-flash-preview") {
-		t.Error("view should contain model name")
-	}
-}
-
-func TestModelSelect_navigateAndPick(t *testing.T) {
-	m := InitialModel()
-	m.screen = screenModelSelect
-	m.models = []string{"model-a", "model-b", "model-c"}
-	m.modelCursor = 0
-
-	var cmd tea.Cmd
-	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	m = m2.(model)
-	if cmd != nil {
-		t.Error("expected nil cmd for navigation")
-	}
-	if m.modelCursor != 1 {
-		t.Errorf("cursor should be 1 after one down, got %d", m.modelCursor)
-	}
-
-	m2, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	m = m2.(model)
-	if m.modelCursor != 2 {
-		t.Errorf("cursor should be 2 after two downs, got %d", m.modelCursor)
-	}
-
-	m2, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
-	m = m2.(model)
-	if m.modelCursor != 1 {
-		t.Errorf("cursor should be 1 after up, got %d", m.modelCursor)
-	}
-
-	m2, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = m2.(model)
-	if m.selectedModel != "model-b" {
-		t.Errorf("selectedModel = %q, want %q", m.selectedModel, "model-b")
-	}
-	if m.screen != screenFolderSelect {
-		t.Errorf("screen should be folder select, got %d", m.screen)
-	}
-}
-
-func TestModelLoadView_renders(t *testing.T) {
-	m := InitialModel()
-	m.screen = screenModelLoading
-	m.width = 80
-	m.height = 24
-	view := m.modelLoadingView()
-	if view == "" {
-		t.Error("modelLoadingView should not be empty")
-	}
-	if !contains(view, "Loading") {
-		t.Error("view should contain 'Loading'")
-	}
-}
-
 func TestFolderSelectView_emptyEntries(t *testing.T) {
 	m := InitialModel()
 	m.screen = screenFolderSelect
@@ -481,7 +400,6 @@ func TestView_dispatchesCorrectScreen(t *testing.T) {
 	m := InitialModel()
 	m.width = 80
 	m.height = 24
-	m.models = []string{"gemini-3-flash-preview", "gemini-2.5-flash"}
 
 	tests := []struct {
 		name   string
@@ -489,8 +407,6 @@ func TestView_dispatchesCorrectScreen(t *testing.T) {
 		check  string
 	}{
 		{"API key", screenAPIKey, "WaterToGo"},
-		{"Model loading", screenModelLoading, "Loading"},
-		{"Model select", screenModelSelect, "Select"},
 		{"Folder select", screenFolderSelect, "Select"},
 		{"Converting", screenConverting, "Converting"},
 		{"Done", screenDone, "WATER"},
@@ -513,8 +429,8 @@ func TestAPIKeyEnter_savesKey(t *testing.T) {
 	msg := tea.KeyMsg{Type: tea.KeyEnter}
 	result, _ := m.Update(msg)
 	m2 := result.(model)
-	if m2.screen != screenModelLoading {
-		t.Errorf("should go to model loading, got screen %d", m2.screen)
+	if m2.screen != screenFolderSelect {
+		t.Errorf("should go to folder select, got screen %d", m2.screen)
 	}
 	if m2.apiErr != "" {
 		t.Errorf("unexpected error: %s", m2.apiErr)
