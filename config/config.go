@@ -10,14 +10,23 @@ type Config struct {
 	APIKeys []string `json:"api_keys,omitempty"`
 }
 
+const configDirName = "WaterToGo"
 const configFileName = "watertogo_config.json"
 
 func ConfigPath() (string, error) {
-	exe, err := os.Executable()
+	userCfgDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(filepath.Dir(exe), configFileName), nil
+	return filepath.Join(userCfgDir, configDirName, configFileName), nil
+}
+
+func configDir() (string, error) {
+	userCfgDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(userCfgDir, configDirName), nil
 }
 
 func Load() (*Config, error) {
@@ -59,6 +68,13 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) Save() error {
+	dir, err := configDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 	path, err := ConfigPath()
 	if err != nil {
 		return err

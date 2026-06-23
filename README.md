@@ -1,3 +1,5 @@
+<div align="center">
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/logo.png">
   <img alt="WaterToGo" src="assets/logo.png" width="160">
@@ -7,9 +9,11 @@
 
 > **Convert JS/TS/Python/Rust codebases to idiomatic Go using Google Gemini.**
 
-[![Release](https://img.shields.io/github/v/release/johnvictor/watertogo?style=flat&label=release&color=00D4AA)](https://github.com/johnvictor/watertogo/releases)
+[![Release](https://img.shields.io/github/v/release/StellariumFoundation/WaterToGo?style=flat&label=release&color=00D4AA)](https://github.com/StellariumFoundation/WaterToGo/releases)
 [![Go Version](https://img.shields.io/badge/go-1.26+-00ADD8?style=flat&logo=go)](https://go.dev)
-[![License](https://img.shields.io/github/license/johnvictor/watertogo?style=flat&color=A855F7)](LICENSE)
+[![License](https://img.shields.io/github/license/StellariumFoundation/WaterToGo?style=flat&color=A855F7)](LICENSE)
+
+</div>
 
 ---
 
@@ -134,7 +138,15 @@ GOOS=darwin  GOARCH=arm64 go build -ldflags="-s -w" -o watertogo-macos-arm64 .
 
 ## Configuration
 
-API keys are stored in `watertogo_config.json` next to the executable:
+API keys are stored in a system config directory:
+
+| Platform | Location |
+|---|---|
+| **Windows** | `%APPDATA%\WaterToGo\watertogo_config.json` |
+| **Linux** | `~/.config/WaterToGo/watertogo_config.json` |
+| **macOS** | `~/Library/Application Support/WaterToGo/watertogo_config.json` |
+
+The file format:
 
 ```json
 {
@@ -142,7 +154,7 @@ API keys are stored in `watertogo_config.json` next to the executable:
 }
 ```
 
-You can edit this file directly to add or remove keys. Old single-key format (`"api_key": "..."`) is also supported and upgraded automatically.
+Old single-key format (`"api_key": "..."`) is supported and upgraded automatically on load.
 
 All activity is logged to `watertogo.log` in the project root.
 
