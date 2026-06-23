@@ -36,14 +36,14 @@
 
 | Platform | Architecture | File | How to run |
 |---|---|---|---|
-| **Windows** | x86_64 | [`WaterToGo-x86_64.exe`](https://github.com/johnvictor/watertogo/releases/latest) | Double-click |
-| **Windows** | ARM64 | [`WaterToGo-arm64.exe`](https://github.com/johnvictor/watertogo/releases/latest) | Double-click |
-| **Linux** | x86_64 | [`WaterToGo-x86_64.AppImage`](https://github.com/johnvictor/watertogo/releases/latest) | `chmod +x` + double-click or `./` |
-| **Linux** | ARM64 | [`WaterToGo-arm64.AppImage`](https://github.com/johnvictor/watertogo/releases/latest) | `chmod +x` + double-click or `./` |
-| **macOS** | Intel | [`WaterToGo-darwin-x86_64.tar.gz`](https://github.com/johnvictor/watertogo/releases/latest) | Extract → double-click `WaterToGo.app` |
-| **macOS** | Apple Silicon | [`WaterToGo-darwin-arm64.tar.gz`](https://github.com/johnvictor/watertogo/releases/latest) | Extract → double-click `WaterToGo.app` |
+| **Windows** | x86_64 | [`WaterToGo-x86_64.exe`](https://github.com/StellariumFoundation/WaterToGo/releases/latest) | Double-click |
+| **Windows** | ARM64 | [`WaterToGo-arm64.exe`](https://github.com/StellariumFoundation/WaterToGo/releases/latest) | Double-click |
+| **Linux** | x86_64 | [`WaterToGo-x86_64.AppImage`](https://github.com/StellariumFoundation/WaterToGo/releases/latest) | `chmod +x` + double-click or `./` |
+| **Linux** | ARM64 | [`WaterToGo-arm64.AppImage`](https://github.com/StellariumFoundation/WaterToGo/releases/latest) | `chmod +x` + double-click or `./` |
+| **macOS** | Intel | [`WaterToGo-darwin-x86_64.tar.gz`](https://github.com/StellariumFoundation/WaterToGo/releases/latest) | Extract → double-click `WaterToGo.app` |
+| **macOS** | Apple Silicon | [`WaterToGo-darwin-arm64.tar.gz`](https://github.com/StellariumFoundation/WaterToGo/releases/latest) | Extract → double-click `WaterToGo.app` |
 
-All releases include SHA256 checksums. Download the latest from the [Releases page](https://github.com/johnvictor/watertogo/releases).
+All releases include SHA256 checksums. Download the latest from the [Releases page](https://github.com/StellariumFoundation/WaterToGo/releases).
 
 ---
 
@@ -118,7 +118,7 @@ When any API call fails (quota, auth, network, or anything else), WaterToGo imme
 ## Build from source
 
 ```bash
-git clone https://github.com/johnvictor/watertogo.git
+git clone https://github.com/StellariumFoundation/WaterToGo.git
 cd watertogo
 go build -o watertogo .
 ```
