@@ -7,6 +7,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   windows:
     runs-on: ubuntu-latest
@@ -19,9 +22,9 @@ jobs:
           - arch: arm64
             goarch: arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
 
@@ -36,7 +39,7 @@ jobs:
           GOARCH=${{ matrix.goarch }} GOOS=windows go build -ldflags="-s -w" -o WaterToGo-${{ matrix.arch }}.exe .
           rm watertogo.syso
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: watertogo-windows-${{ matrix.arch }}
           path: WaterToGo-${{ matrix.arch }}.exe
@@ -52,9 +55,9 @@ jobs:
           - arch: arm64
             goarch: arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
 
@@ -68,17 +71,22 @@ jobs:
           cp assets/logo.png WaterToGo.AppDir/
           cp LICENSE WaterToGo.AppDir/
 
-          cat > WaterToGo.AppDir/WaterToGo.desktop <<'EOF'
-          [Desktop Entry]
-          Name=WaterToGo
-          Comment=Convert JS/TS/Python/Rust codebases to Go using Gemini
-          Exec=watertogo
-          Icon=logo
-          Terminal=true
-          Type=Application
-          Categories=Development;Utility;
-          EOF
-          printf '%s\n' '#!/bin/bash' 'HERE="$(dirname "$(readlink -f "$0")")"' 'exec "$HERE/watertogo"' > WaterToGo.AppDir/AppRun
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Name=WaterToGo' \
+            'Comment=Convert JS/TS/Python/Rust codebases to Go using Gemini' \
+            'Exec=watertogo' \
+            'Icon=logo' \
+            'Terminal=true' \
+            'Type=Application' \
+            'Categories=Development;Utility;' \
+            > WaterToGo.AppDir/WaterToGo.desktop
+
+          printf '%s\n' \
+            '#!/bin/bash' \
+            'HERE="$(dirname "$(readlink -f "$0")")"' \
+            'exec "$HERE/watertogo"' \
+            > WaterToGo.AppDir/AppRun
           chmod +x WaterToGo.AppDir/AppRun
           ln -s logo.png WaterToGo.AppDir/.DirIcon
 
@@ -90,7 +98,7 @@ jobs:
           ./appimagetool-x86_64.AppImage --appimage-extract > /dev/null 2>&1
           ARCH=${{ matrix.arch }} ./squashfs-root/AppRun WaterToGo.AppDir WaterToGo-${{ matrix.arch }}.AppImage
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: watertogo-linux-${{ matrix.arch }}
           path: WaterToGo-${{ matrix.arch }}.AppImage
@@ -106,14 +114,22 @@ jobs:
           - arch: arm64
             goarch: arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
 
       - name: Build binary
         run: GOARCH=${{ matrix.goarch }} GOOS=darwin go build -ldflags="-s -w" -o watertogo .
+
+      - name: Set version
+        run: |
+          RAW="${GITHUB_REF_NAME#v}"
+          if [ "$RAW" = "$GITHUB_REF_NAME" ]; then
+            RAW="0.0.0-dev+$(echo ${GITHUB_SHA:0:7})"
+          fi
+          echo "VERSION=$RAW" >> $GITHUB_ENV
 
       - name: Create .app bundle
         run: |
@@ -123,33 +139,39 @@ jobs:
           cp watertogo "$appdir/Contents/MacOS/watertogo"
           chmod +x "$appdir/Contents/MacOS/watertogo"
 
-          printf '%s\n' '#!/bin/bash' 'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"' 'open -a Terminal "$SCRIPT_DIR/watertogo"' > "$appdir/Contents/MacOS/launcher.sh"
+          printf '%s\n' \
+            '#!/bin/bash' \
+            'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"' \
+            'open -a Terminal "$SCRIPT_DIR/watertogo"' \
+            > "$appdir/Contents/MacOS/launcher.sh"
           chmod +x "$appdir/Contents/MacOS/launcher.sh"
 
-          cat > "$appdir/Contents/Info.plist" <<'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleExecutable</key>
-              <string>launcher.sh</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.watertogo.app</string>
-              <key>CFBundleName</key>
-              <string>WaterToGo</string>
-              <key>CFBundleDisplayName</key>
-              <string>WaterToGo</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleShortVersionString</key>
-              <string>1.0.0</string>
-              <key>CFBundleVersion</key>
-              <string>1</string>
-              <key>NSHighResolutionCapable</key>
-              <true/>
-          </dict>
-          </plist>
-          EOF
+          {
+            echo '<?xml version="1.0" encoding="UTF-8"?>'
+            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+            echo '<plist version="1.0">'
+            echo '<dict>'
+            echo '  <key>CFBundleExecutable</key>'
+            echo '  <string>launcher.sh</string>'
+            echo '  <key>CFBundleIdentifier</key>'
+            echo '  <string>com.watertogo.app</string>'
+            echo '  <key>CFBundleName</key>'
+            echo '  <string>WaterToGo</string>'
+            echo '  <key>CFBundleDisplayName</key>'
+            echo '  <string>WaterToGo</string>'
+            echo '  <key>CFBundlePackageType</key>'
+            echo '  <string>APPL</string>'
+            echo '  <key>CFBundleShortVersionString</key>'
+            echo "  <string>$VERSION</string>"
+            echo '  <key>CFBundleVersion</key>'
+            echo "  <string>$VERSION</string>"
+            echo '  <key>CFBundleIconFile</key>'
+            echo '  <string>icon</string>'
+            echo '  <key>NSHighResolutionCapable</key>'
+            echo '  <true/>'
+            echo '</dict>'
+            echo '</plist>'
+          } > "$appdir/Contents/Info.plist"
 
           mkdir -p WaterToGo.iconset
           sips --cropToHeightWidth 3171 3171 assets/logo.png --out /tmp/logo-square.png
@@ -163,17 +185,16 @@ jobs:
 
           tar czf "WaterToGo-darwin-${{ matrix.arch }}.tar.gz" "$appdir"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: watertogo-darwin-${{ matrix.arch }}
           path: WaterToGo-darwin-${{ matrix.arch }}.tar.gz
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: [windows, linux, macos]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: watertogo-*
           merge-multiple: true
@@ -181,8 +202,11 @@ jobs:
       - name: Generate checksums
         run: sha256sum WaterToGo-* > checksums.txt
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
+          tag_name: build-${{ github.run_id }}
+          name: "Build #${{ github.run_id }} (${{ github.sha }})"
+          body: ${{ github.event.head_commit.message || 'Automated build' }}
           files: |
             WaterToGo-x86_64.exe
             WaterToGo-arm64.exe
@@ -192,4 +216,4 @@ jobs:
             WaterToGo-darwin-arm64.tar.gz
             checksums.txt
           fail_on_unmatched_files: false
-          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
