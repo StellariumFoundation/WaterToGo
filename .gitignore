@@ -1,3 +1,6 @@
 *.exe
 watertogo_config.json
 *.cfg
+dist/
+*.exe~
+*.log

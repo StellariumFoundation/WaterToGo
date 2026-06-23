@@ -154,13 +154,27 @@ func (m model) convertingView() string {
 	b.WriteString("\n")
 
 	if m.totalFiles > 0 {
-		pct := float64(min(m.currentFile, m.totalFiles)) / float64(m.totalFiles)
+		current := min(m.currentFile, m.totalFiles)
+		total := m.totalFiles
+		pct := float64(current) / float64(total)
 		if pct > 1.0 {
 			pct = 1.0
 		}
-		bar := m.progress.ViewAs(pct)
+		barWidth := w - 14
+		if barWidth < 20 {
+			barWidth = 20
+		}
+		filled := int(float64(barWidth) * pct)
+		if filled > barWidth {
+			filled = barWidth
+		}
+		fillStyle := lipgloss.NewStyle().Background(lipgloss.Color("#7571F9"))
+		emptyStyle := lipgloss.NewStyle().Background(lipgloss.Color("#3C3C3C"))
+		fillStr := fillStyle.Render(strings.Repeat(" ", filled))
+		emptyStr := emptyStyle.Render(strings.Repeat(" ", barWidth-filled))
+		countText := fmt.Sprintf(" %d/%d ", current, total)
+		bar := fillStr + emptyStr + dimStyle.Render(countText)
 		b.WriteString(centerText(bar, w))
-		b.WriteString(centerText(fmt.Sprintf("%d / %d files", min(m.currentFile, m.totalFiles), m.totalFiles), w))
 		b.WriteString("\n")
 		if m.conv != nil {
 			b.WriteString(centerText(dimStyle.Render(fmt.Sprintf("Model: %s", m.conv.CurrentModel())), w))

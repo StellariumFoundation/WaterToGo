@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=WaterToGo
+Comment=Convert JS/TS/Python/Rust codebases to Go using Gemini
+Exec=watertogo
+Icon=logo
+Terminal=true
+Type=Application
+Categories=Development;Utility;
